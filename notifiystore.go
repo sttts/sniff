@@ -1,4 +1,4 @@
-/* {{{ Copyright (c) Paul R. Tagliamonte <paultag@debian.org>, 2015
+/* {{{ Copyright (c) Dr. Stefan Schimanski <stefan.schimanski@gmail.com>, 2016
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,49 +21,46 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
+	"k8s.io/client-go/1.4/tools/cache"
 )
 
-type Config struct {
-	Bind       Bind
-	Servers    []Server
-	Kubernetes *Kubernetes
+// NotifyingStore notifies about changes.
+type NotifyingStore struct {
+	cache.Store
+	NotifyFunc func()
 }
 
-type Kubernetes struct {
-	Kubeconfig   string
-	IngressClass string
-}
+// Assert that it implements the Store interface.
+var _ cache.Store = &NotifyingStore{}
 
-type Bind struct {
-	Host string
-	Port int
-}
-
-type Server struct {
-	Default bool
-	Regexp  bool
-	Host    string
-	Names   []string
-	Port    int
-}
-
-func LoadConfig(path string) (*Config, error) {
-	fd, err := os.Open(path)
-	if err != nil {
-		return nil, err
+func (u *NotifyingStore) Add(obj interface{}) error {
+	if err := u.Store.Add(obj); err != nil {
+		return err
 	}
-	config := Config{}
-	err = json.NewDecoder(fd).Decode(&config)
-	if err != nil {
-		return nil, err
-	}
+	u.NotifyFunc()
+	return nil
+}
 
-	if len(config.Servers) > 0 && config.Kubernetes != nil {
-		return nil, fmt.Errorf("Cannot set .Servers and .Kubernetes in config file")
+func (u *NotifyingStore) Update(obj interface{}) error {
+	if err := u.Store.Update(obj); err != nil {
+		return err
 	}
+	u.NotifyFunc()
+	return nil
+}
 
-	return &config, err
+func (u *NotifyingStore) Delete(obj interface{}) error {
+	if err := u.Store.Delete(obj); err != nil {
+		return err
+	}
+	u.NotifyFunc()
+	return nil
+}
+
+func (u *NotifyingStore) Replace(list []interface{}, resourceVersion string) error {
+	if err := u.Store.Replace(list, resourceVersion); err != nil {
+		return err
+	}
+	u.NotifyFunc()
+	return nil
 }
